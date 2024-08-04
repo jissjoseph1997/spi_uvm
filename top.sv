@@ -1,5 +1,5 @@
 `timescale 1ns / 1ps
- 
+ //time
 module uart_top
 #(
 parameter clk_freq = 1000000,
