@@ -1,467 +1,143 @@
-`timescale 1ns / 1ps
- //time new change check   gng
-module uart_top
-#(
-parameter clk_freq = 1000000,
-parameter baud_rate = 9600
-)
-(
-  input clk,rst, 
-  input rx,
-  input [7:0] dintx,
-  input newd,
-  output tx, 
-  output [7:0] doutrx,
-  output donetx,
-  output donerx
+ module spi_master(
+input clk, newd,rst,
+input [11:0] din, 
+output reg sclk,cs,mosi
     );
-    
-uarttx 
-#(clk_freq, baud_rate) 
-utx   
-(clk, rst, newd, dintx, tx, donetx);   
- 
-uartrx 
-#(clk_freq, baud_rate)
-rtx
-(clk, rst, rx, donerx, doutrx);    
-    
-    
-endmodule
- 
- 
-//////////////////////////////////////////////////////////////////
- 
-module uarttx
-#(
-parameter clk_freq = 1000000,
-parameter baud_rate = 9600
-)
-(
-input clk,rst,
-input newd,
-input [7:0] tx_data,
-output reg tx,
-output reg donetx
-);
- 
-  localparam clkcount = (clk_freq/baud_rate); ///x
   
-integer count = 0;
-integer counts = 0;
- 
-reg uclk = 0;
+  typedef enum bit [1:0] {idle = 2'b00, enable = 2'b01, send = 2'b10, comp = 2'b11 } state_type;
+  state_type state = idle;
   
-enum bit[1:0] {idle = 2'b00, start = 2'b01, transfer = 2'b10, done = 2'b11} state;
+  int countc = 0;
+  int count = 0;
  
- ///////////uart_clock_gen
-  always@(posedge clk)
-    begin
-      if(count < clkcount/2)
-        count <= count + 1;
-      else begin
-        count <= 0;
-        uclk <= ~uclk;
-      end 
+  /////////////////////////generation of sclk
+ always@(posedge clk)
+  begin
+    if(rst == 1'b1) begin
+      countc <= 0;
+      sclk <= 1'b0;
     end
-  
-  
-  reg [7:0] din;
-  ////////////////////Reset decoder
-  
-  
-  always@(posedge uclk)
-    begin
-      if(rst) 
-      begin
-        state <= idle;
-      end
-     else
-     begin
-     case(state)
-       idle:
-         begin
-           counts <= 0;
-           tx <= 1'b1;
-           donetx <= 1'b0;
-           
-           if(newd) 
-           begin
-             state <= transfer;
-             din <= tx_data;
-             tx <= 1'b0; 
-           end
-           else
-             state <= idle;       
-         end
-       
- 
-      
-      transfer: begin
-        if(counts <= 7) begin
-           counts <= counts + 1;
-           tx <= din[counts];
-           state <= transfer;
-        end
-        else 
-        begin
-           counts <= 0;
-           tx <= 1'b1;
-           state <= idle;
-          donetx <= 1'b1;
-        end
-      end
-      
- 
-      
-     
-      default : state <= idle;
-    endcase
+    else begin 
+      if(countc < 10 )
+          countc <= countc + 1;
+      else
+          begin
+          countc <= 0;
+          sclk <= ~sclk;
+          end
+    end
   end
-end
- 
-endmodule
- 
- 
- 
-////////////////////////////////////////////////////////////////////
- 
- 
- 
- 
-module uartrx
-#(
-parameter clk_freq = 1000000, //MHz
-parameter baud_rate = 9600
-    )
- (
-input clk,
-input rst,
-input rx,
-output reg done,
-output reg [7:0] rxdata
-);
+  
+  //////////////////state machine
+    reg [11:0] temp;
     
-localparam clkcount = (clk_freq/baud_rate);
-  
-integer count = 0;
-integer counts = 0;
-  
-reg uclk = 0;
-  
-  
-enum bit[1:0] {idle = 2'b00, start = 2'b01} state;
- 
- ///////////uart_clock_gen
-  always@(posedge clk)
-    begin
-      if(count < clkcount/2)
-        count <= count + 1;
-      else begin
-        count <= 0;
-        uclk <= ~uclk;
-      end 
+    
+  always@(posedge sclk)
+  begin
+    if(rst == 1'b1) begin
+      cs <= 1'b1; 
+      mosi <= 1'b0;
     end
-  
-  
- 
-  always@(posedge uclk)
-    begin
-      if(rst) 
-      begin
-     rxdata <= 8'h00;
-     counts <= 0;
-     done <= 1'b0;
-      end
-     else
-     begin
+    else begin
      case(state)
+         idle:
+             begin
+               if(newd == 1'b1) begin
+                 state <= send;
+                 temp <= din; 
+                 cs <= 1'b0;
+               end
+               else begin
+                 state <= idle;
+                 temp <= 8'h00;
+               end
+             end
        
-     idle : 
-     begin
-     rxdata <= 8'h00;
-     counts <= 0;
-     done <= 1'b0;
-     
-     if(rx == 1'b0)
-       state <= start;
-     else
-       state <= idle;
-     end
-     
-     start: 
-     begin
-       if(counts <= 7)
-      begin
-     counts <= counts + 1;
-     rxdata <= {rx, rxdata[7:1]};
-     end
-     else
-     begin
-     counts <= 0;
-     done <= 1'b1;
-     state <= idle;
-     end
-     end
-   
-   
-   default : state <= idle;
-   
-   endcase
- 
-end
- 
-end
- 
-endmodule
- 
- 
-///////////////////////////////////////////////////////////////////
- 
-interface uart_if;
-  logic clk;
-  logic uclktx;
-  logic uclkrx;
-  logic rst;
-  logic rx;
-  logic [7:0] dintx;
-  logic newd;
-  logic tx;
-  logic [7:0] doutrx;
-  logic donetx;
-  logic donerx;
-  
-`timescale 1ns / 1ps
- //time
-module uart_top
-#(
-parameter clk_freq = 1000000,
-parameter baud_rate = 9600
-)
-(
-  input clk,rst, 
-  input rx,
-  input [7:0] dintx,
-  input newd,
-  output tx, 
-  output [7:0] doutrx,
-  output donetx,
-  output donerx
-    );
-    
-uarttx 
-#(clk_freq, baud_rate) 
-utx   
-(clk, rst, newd, dintx, tx, donetx);   
- 
-uartrx 
-#(clk_freq, baud_rate)
-rtx
-(clk, rst, rx, donerx, doutrx);    
-    
-    
-endmodule
- 
- 
-//////////////////////////////////////////////////////////////////
- 
-module uarttx
-#(
-parameter clk_freq = 1000000,
-parameter baud_rate = 9600
-)
-(
-input clk,rst,
-input newd,
-input [7:0] tx_data,
-output reg tx,
-output reg donetx
-);
- 
-  localparam clkcount = (clk_freq/baud_rate); ///x
-  
-integer count = 0;
-integer counts = 0;
- 
-reg uclk = 0;
-  
-enum bit[1:0] {idle = 2'b00, start = 2'b01, transfer = 2'b10, done = 2'b11} state;
- 
- ///////////uart_clock_gen
-  always@(posedge clk)
-    begin
-      if(count < clkcount/2)
-        count <= count + 1;
-      else begin
-        count <= 0;
-        uclk <= ~uclk;
-      end 
-    end
-  
-  
-  reg [7:0] din;
-  ////////////////////Reset decoder
-  
-  
-  always@(posedge uclk)
-    begin
-      if(rst) 
-      begin
-        state <= idle;
-      end
-     else
-     begin
-     case(state)
-       idle:
-         begin
-           counts <= 0;
-           tx <= 1'b1;
-           donetx <= 1'b0;
-           
-           if(newd) 
-           begin
-             state <= transfer;
-             din <= tx_data;
-             tx <= 1'b0; 
-           end
-           else
-             state <= idle;       
+       
+       send : begin
+         if(count <= 11) begin
+           mosi <= temp[count]; /////sending lsb first
+           count <= count + 1;
          end
+         else
+             begin
+               count <= 0;
+               state <= idle;
+               cs <= 1'b1;
+               mosi <= 1'b0;
+             end
+       end
        
- 
-      
-      transfer: begin
-        if(counts <= 7) begin
-           counts <= counts + 1;
-           tx <= din[counts];
-           state <= transfer;
-        end
-        else 
-        begin
-           counts <= 0;
-           tx <= 1'b1;
-           state <= idle;
-          donetx <= 1'b1;
-        end
-      end
-      
- 
-      
-     
-      default : state <= idle;
-    endcase
-  end
-end
- 
-endmodule
- 
- 
- 
-////////////////////////////////////////////////////////////////////
- 
- 
- 
- 
-module uartrx
-#(
-parameter clk_freq = 1000000, //MHz
-parameter baud_rate = 9600
-    )
- (
-input clk,
-input rst,
-input rx,
-output reg done,
-output reg [7:0] rxdata
-);
-    
-localparam clkcount = (clk_freq/baud_rate);
-  
-integer count = 0;
-integer counts = 0;
-  
-reg uclk = 0;
-  
-  
-enum bit[1:0] {idle = 2'b00, start = 2'b01} state;
- 
- ///////////uart_clock_gen
-  always@(posedge clk)
-    begin
-      if(count < clkcount/2)
-        count <= count + 1;
-      else begin
-        count <= 0;
-        uclk <= ~uclk;
-      end 
-    end
-  
-  
- 
-  always@(posedge uclk)
-    begin
-      if(rst) 
-      begin
-     rxdata <= 8'h00;
-     counts <= 0;
-     done <= 1'b0;
-      end
-     else
-     begin
-     case(state)
+                
+      default : state <= idle; 
        
-     idle : 
-     begin
-     rxdata <= 8'h00;
-     counts <= 0;
-     done <= 1'b0;
-     
-     if(rx == 1'b0)
-       state <= start;
-     else
-       state <= idle;
-     end
-     
-     start: 
-     begin
-       if(counts <= 7)
-      begin
-     counts <= counts + 1;
-     rxdata <= {rx, rxdata[7:1]};
-     end
-     else
-     begin
-     counts <= 0;
-     done <= 1'b1;
-     state <= idle;
-     end
-     end
-   
-   
-   default : state <= idle;
-   
    endcase
+  end 
+ end
+  
+endmodule
+///////////////////////////
+ 
+module spi_slave (
+input sclk, cs, mosi,
+output [11:0] dout,
+output reg done
+);
+ 
+typedef enum bit {detect_start = 1'b0, read_data = 1'b1} state_type;
+state_type state = detect_start;
+ 
+reg [11:0] temp = 12'h000;
+int count = 0;
+ 
+always@(posedge sclk)
+begin
+ 
+case(state)
+detect_start: 
+begin
+done   <= 1'b0;
+if(cs == 1'b0)
+ state <= read_data;
+ else
+ state <= detect_start;
+end
+ 
+read_data : begin
+if(count <= 11)
+ begin
+ count <= count + 1;
+ temp  <= { mosi, temp[11:1]};
+ end
+ else
+ begin
+ count <= 0;
+ done <= 1'b1;
+ state <= detect_start;
+ end
  
 end
  
+endcase
 end
+assign dout = temp;
  
 endmodule
  
  
-///////////////////////////////////////////////////////////////////
  
-interface uart_if;
-  logic clk;
-  logic uclktx;
-  logic uclkrx;
-  logic rst;
-  logic rx;
-  logic [7:0] dintx;
-  logic newd;
-  logic tx;
-  logic [7:0] doutrx;
-  logic donetx;
-  logic donerx;
+/////////////////////////////// 
+module top (
+input clk, rst, newd,
+input [11:0] din,
+output [11:0] dout,
+output done
+);
+ 
+wire sclk, cs, mosi;
+ 
+spi_master m1 (clk, newd, rst, din, sclk, cs, mosi);
+spi_slave s1  (sclk, cs, mosi, dout, done);
   
-endinterface
+ 
+endmodule
